@@ -2,13 +2,14 @@ using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi;
 using TaskTracker.Application.Interfaces;
 using TaskTracker.Application.Services;
 using TaskTracker.Application.Validation;
+using TaskTracker.Filters;
 using TaskTracker.Infrastructure.Persistence;
 using TaskTracker.Infrastructure.Persistence.Repositories;
 using TaskTracker.Middleware;
-using TaskTracker.Filters;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,17 +17,26 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers(options =>
 {
-    // Global model validation filter that throws AppValidationException for consistent error shape
-    options.Filters.Add<ModelValidationFilter>();
+	// Global model validation filter that throws AppValidationException for consistent error shape
+	options.Filters.Add<ModelValidationFilter>();
 });
 
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+// OpenAPI / Swagger UI
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+	c.SwaggerDoc("v1", new OpenApiInfo
+	{
+		Title = "TaskTracker API",
+		Version = "v1",
+		Description = "Internal TaskItem tracking API"
+	});
+});
 
 // EF Core
 builder.Services.AddDbContext<TaskTrackerDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? "Data Source=tasktracker.db"));
+	options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")
+		?? "Data Source=tasktracker.db"));
 
 // DI: Application services and repositories
 builder.Services.AddScoped<ITaskItemService, TaskItemService>();
@@ -39,7 +49,7 @@ builder.Services.AddValidatorsFromAssemblyContaining<CreateTaskItemDtoValidator>
 // Consistent model validation behavior: disable automatic 400 from ApiController
 builder.Services.Configure<ApiBehaviorOptions>(o =>
 {
-    o.SuppressModelStateInvalidFilter = true;
+	o.SuppressModelStateInvalidFilter = true;
 });
 
 var app = builder.Build();
@@ -47,7 +57,13 @@ var app = builder.Build();
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+	app.UseSwagger();
+	app.UseSwaggerUI(c =>
+	{
+		c.SwaggerEndpoint("/swagger/v1/swagger.json", "TaskTracker API v1");
+		c.DisplayRequestDuration();
+		c.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.List);
+	});
 }
 
 app.UseHttpsRedirection();
