@@ -97,8 +97,29 @@ public sealed class TaskItemService : ITaskItemService
 
 		return ToDto(entity, urgencyLevelName: null);
 	}
-	public Task<TaskItemDto> ReopenAsync(Guid id, CancellationToken ct = default) => throw new NotImplementedException();
+	public async Task<TaskItemDto> ReopenAsync(Guid id, CancellationToken ct = default)
+	{
+		var entity = await _repository.GetByIdAsync(id, includeDeleted: false, ct)
+			?? throw new TaskItemNotFoundException(id);
 
+		// "if backward is allowed at all, it must be a separate
+		// deliberate action, not a side effect of a normal update." This IS
+		// that action. Reopen only makes sense from Finished -- moving back
+		// from InProgress to Started isn't what this rule is describing, and
+		// ChangeStageAsync already blocks it the same way it blocks Finished.
+		if (entity.Stage != TaskStage.Finished)
+		{
+			throw new TaskItemConflictException(
+				"REOPEN_NOT_APPLICABLE",
+				$"Reopen only applies to a Finished TaskItem; current stage is '{entity.Stage}'.");
+		}
+
+		entity.Stage = TaskStage.InProgress;
+		entity.UpdatedAtUtc = DateTime.UtcNow;
+		await _repository.SaveChangesAsync(ct);
+
+		return ToDto(entity, urgencyLevelName: null);
+	}
 	private static TaskItemDto ToDto(TaskItem entity, string? urgencyLevelName) => new()
 	{
 		Id = entity.Id,
