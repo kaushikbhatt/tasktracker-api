@@ -14,7 +14,9 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
 
 		builder.Property(t => t.Title)
 			.HasMaxLength(200)
-			.IsRequired();
+			.IsRequired()
+			.UseCollation("NOCASE"); // Case-insensitive comparisons in SQLite
+		;
 
 		builder.Property(t => t.Notes)
 			.HasMaxLength(500);

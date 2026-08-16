@@ -39,7 +39,7 @@ public sealed class TaskItemRepository : ITaskItemRepository
     {
         return await _db.TaskItems
             .AsNoTracking()
-            .Where(t => !t.IsDeleted && t.Title == title)
+            .Where(t => !t.IsDeleted && EF.Functions.Collate(t.Title, "NOCASE") == title)
             .Where(t => !excludingId.HasValue || t.Id != excludingId.Value)
             .AnyAsync(ct);
     }
