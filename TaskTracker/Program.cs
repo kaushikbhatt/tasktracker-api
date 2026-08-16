@@ -1,3 +1,6 @@
+using Microsoft.EntityFrameworkCore;
+using TaskTracker.Infrastructure.Persistence;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -5,7 +8,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
-
+builder.Services.AddDbContext<TaskTrackerDbContext>(options =>
+	options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")
+		?? "Data Source=tasktracker.db"));
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
