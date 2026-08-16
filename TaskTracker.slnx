@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".gitignore" />
+  </Folder>
+  <Project Path="TaskTracker.Application/TaskTracker.Application.csproj" />
+  <Project Path="TaskTracker.Domain/TaskTracker.Domain.csproj" />
+  <Project Path="TaskTracker.Infrastructure/TaskTracker.Infrastructure.csproj" />
+  <Project Path="TaskTracker.Tests/TaskTracker.Tests.csproj" />
+  <Project Path="TaskTracker/TaskTracker.Api.csproj" />
+</Solution>
