@@ -60,8 +60,83 @@ public sealed class TaskItemService : ITaskItemService
 	// RestoreAsync, ChangeStageAsync, ReopenAsync.
 	public Task<TaskItemDto> GetByIdAsync(Guid id, CancellationToken ct = default) => throw new NotImplementedException();
 	public Task<PagedResult<TaskItemDto>> QueryAsync(TaskItemQuery query, CancellationToken ct = default) => throw new NotImplementedException();
-	public Task<TaskItemDto> UpdateAsync(Guid id, UpdateTaskItemDto dto, CancellationToken ct = default) => throw new NotImplementedException();
-	public Task<TaskItemDto> PatchAsync(Guid id, PatchTaskItemDto dto, CancellationToken ct = default) => throw new NotImplementedException();
+	public async Task<TaskItemDto> UpdateAsync(Guid id, UpdateTaskItemDto dto, CancellationToken ct = default)
+	{
+		var entity = await _repository.GetByIdAsync(id, includeDeleted: false, ct)
+			?? throw new TaskItemNotFoundException(id);
+
+		if (!string.Equals(entity.Title, dto.Title, StringComparison.Ordinal)
+			&& await _repository.ExistsWithActiveTitleAsync(dto.Title, excludingId: entity.Id, ct))
+		{
+			throw new TaskItemConflictException(
+				"DUPLICATE_ACTIVE_TITLE",
+				$"An active TaskItem with the title '{dto.Title}' already exists.");
+		}
+
+		if (!await _repository.UrgencyLevelExistsAsync(dto.UrgencyLevelId, ct))
+		{
+			throw new AppValidationException(nameof(dto.UrgencyLevelId), "Urgency level does not exist.");
+		}
+
+		// Full replace,-- but note Stage is NOT a field on
+		// UpdateTaskItemDto at all. PUT is still a "normal update" under
+		//  -- it can't move Stage backward either; Stage only ever
+		// changes via ChangeStageAsync or ReopenAsync.
+		entity.Title = dto.Title;
+		entity.Notes = dto.Notes;
+		entity.UrgencyLevelId = dto.UrgencyLevelId;
+		entity.Deadline = dto.Deadline;
+		entity.UpdatedAtUtc = DateTime.UtcNow;
+
+		await _repository.SaveChangesAsync(ct);
+		return ToDto(entity, urgencyLevelName: null);
+	}
+
+	public async Task<TaskItemDto> PatchAsync(Guid id, PatchTaskItemDto dto, CancellationToken ct = default)
+	{
+		var entity = await _repository.GetByIdAsync(id, includeDeleted: false, ct)
+			?? throw new TaskItemNotFoundException(id);
+
+		// -- only fields actually present in the JSON get touched.
+		// Optional<T>.IsSet is what distinguishes "omitted" from "sent as null".
+		if (dto.Title.IsSet)
+		{
+			var newTitle = dto.Title.Value ?? string.Empty;
+			if (!string.Equals(entity.Title, newTitle, StringComparison.Ordinal)
+				&& await _repository.ExistsWithActiveTitleAsync(newTitle, excludingId: entity.Id, ct))
+			{
+				throw new TaskItemConflictException(
+					"DUPLICATE_ACTIVE_TITLE",
+					$"An active TaskItem with the title '{newTitle}' already exists.");
+			}
+			entity.Title = newTitle;
+		}
+
+		if (dto.Notes.IsSet)
+		{
+			entity.Notes = dto.Notes.Value;
+		}
+
+		if (dto.UrgencyLevelId.IsSet)
+		{
+			if (!await _repository.UrgencyLevelExistsAsync(dto.UrgencyLevelId.Value, ct))
+			{
+				throw new AppValidationException(nameof(dto.UrgencyLevelId), "Urgency level does not exist.");
+			}
+			entity.UrgencyLevelId = dto.UrgencyLevelId.Value;
+		}
+
+		if (dto.Deadline.IsSet)
+		{
+			entity.Deadline = dto.Deadline.Value;
+		}
+
+		// Same as PUT: no Stage field exists on this DTO at all, so PATCH
+		// physically cannot be used to change stage, forward or backward.
+		entity.UpdatedAtUtc = DateTime.UtcNow;
+		await _repository.SaveChangesAsync(ct);
+		return ToDto(entity, urgencyLevelName: null);
+	}
 	public async Task DeleteAsync(Guid id, CancellationToken ct = default)
 	{
 		var entity = await _repository.GetByIdAsync(id, includeDeleted: false, ct)
