@@ -131,7 +131,7 @@ public class TaskItemServiceTests
 			.Which.ErrorCode.Should().Be("DUPLICATE_ACTIVE_TITLE");
 	}
 
-	[Fact]
+		[Fact]
 	public async Task Restore_WhenTitleFree_Succeeds()
 	{
 		var entity = new TaskItem { Id = Guid.NewGuid(), Title = "Inspect Line 12", IsDeleted = true, DeletedAtUtc = DateTime.UtcNow };
@@ -144,4 +144,135 @@ public class TaskItemServiceTests
 		entity.IsDeleted.Should().BeFalse();
 		entity.DeletedAtUtc.Should().BeNull();
 	}
+
+	// ---------- Update: title uniqueness and urgency validation ----------
+
+	[Fact]
+	public async Task Update_WhenChangingTitleToDuplicate_ThrowsConflict()
+	{
+		var id = Guid.NewGuid();
+		var entity = new TaskItem { Id = id, Title = "Old", UrgencyLevelId = 1 };
+		_repo.Setup(r => r.GetByIdAsync(id, false, default)).ReturnsAsync(entity);
+		_repo.Setup(r => r.ExistsWithActiveTitleAsync("New", id, default)).ReturnsAsync(true);
+
+		var dto = new UpdateTaskItemDto { Title = "New", UrgencyLevelId = 1 };
+		var act = async () => await _sut.UpdateAsync(id, dto);
+
+		(await act.Should().ThrowAsync<TaskItemConflictException>())
+			.Which.ErrorCode.Should().Be("DUPLICATE_ACTIVE_TITLE");
+	}
+
+	[Fact]
+	public async Task Update_WithValidChanges_Succeeds()
+	{
+		var id = Guid.NewGuid();
+		var entity = new TaskItem { Id = id, Title = "Old", UrgencyLevelId = 1 };
+		_repo.Setup(r => r.GetByIdAsync(id, false, default)).ReturnsAsync(entity);
+		_repo.Setup(r => r.ExistsWithActiveTitleAsync(It.IsAny<string>(), id, default)).ReturnsAsync(false);
+		_repo.Setup(r => r.UrgencyLevelExistsAsync(2, default)).ReturnsAsync(true);
+
+		var dto = new UpdateTaskItemDto { Title = "New Title", Notes = "N", UrgencyLevelId = 2 };
+		var result = await _sut.UpdateAsync(id, dto);
+
+		result.Title.Should().Be("New Title");
+		entity.UrgencyLevelId.Should().Be(2);
+		_repo.Verify(r => r.SaveChangesAsync(default), Times.Once);
+	}
+
+	// ---------- Patch: title uniqueness and urgency validation ----------
+
+	[Fact]
+	public async Task Patch_WhenChangingTitleToDuplicate_ThrowsConflict()
+	{
+		var id = Guid.NewGuid();
+		var entity = new TaskItem { Id = id, Title = "Old", UrgencyLevelId = 1 };
+		_repo.Setup(r => r.GetByIdAsync(id, false, default)).ReturnsAsync(entity);
+		_repo.Setup(r => r.ExistsWithActiveTitleAsync("Clash", id, default)).ReturnsAsync(true);
+
+		var dto = new PatchTaskItemDto { Title = Optional<string>.Of("Clash") };
+		var act = async () => await _sut.PatchAsync(id, dto);
+
+		(await act.Should().ThrowAsync<TaskItemConflictException>())
+			.Which.ErrorCode.Should().Be("DUPLICATE_ACTIVE_TITLE");
+	}
+
+	[Fact]
+	public async Task Patch_WhenUrgencyInvalid_ThrowsValidation()
+	{
+		var id = Guid.NewGuid();
+		var entity = new TaskItem { Id = id, Title = "X", UrgencyLevelId = 1 };
+		_repo.Setup(r => r.GetByIdAsync(id, false, default)).ReturnsAsync(entity);
+		_repo.Setup(r => r.UrgencyLevelExistsAsync(999, default)).ReturnsAsync(false);
+
+		var dto = new PatchTaskItemDto { UrgencyLevelId = Optional<int>.Of(999) };
+		var act = async () => await _sut.PatchAsync(id, dto);
+
+		(await act.Should().ThrowAsync<AppValidationException>())
+			.Which.ErrorCode.Should().Be("VALIDATION_FAILED");
+	}
+
+	// ---------- Query: paging validation ----------
+
+	[Fact]
+	public async Task Query_WhenPageLessThanOne_ThrowsValidation()
+	{
+		var q = new TaskItemQuery { Page = 0, PageSize = 10 };
+		var act = async () => await _sut.QueryAsync(q);
+		(await act.Should().ThrowAsync<AppValidationException>())
+			.Which.ErrorCode.Should().Be("VALIDATION_FAILED");
+	}
+
+	[Fact]
+	public async Task Query_WhenPageSizeOutOfRange_ThrowsValidation()
+	{
+		var q1 = new TaskItemQuery { Page = 1, PageSize = 0 };
+		var q2 = new TaskItemQuery { Page = 1, PageSize = 201 };
+
+		var act1 = async () => await _sut.QueryAsync(q1);
+		var act2 = async () => await _sut.QueryAsync(q2);
+
+		(await act1.Should().ThrowAsync<AppValidationException>()).Which.ErrorCode.Should().Be("VALIDATION_FAILED");
+		(await act2.Should().ThrowAsync<AppValidationException>()).Which.ErrorCode.Should().Be("VALIDATION_FAILED");
+	}
+
+	// ---------- ChangeStage: invalid target ----------
+
+	[Fact]
+	public async Task ChangeStage_WithInvalidTarget_ThrowsValidation()
+	{
+		var id = Guid.NewGuid();
+		var entity = new TaskItem { Id = id, Title = "X", Stage = TaskStage.Started };
+		_repo.Setup(r => r.GetByIdAsync(id, false, default)).ReturnsAsync(entity);
+
+		var act = async () => await _sut.ChangeStageAsync(id, "NotAStage");
+		(await act.Should().ThrowAsync<AppValidationException>())
+			.Which.ErrorCode.Should().Be("VALIDATION_FAILED");
+	}
+
+	// ---------- Restore: not-deleted case ----------
+
+	[Fact]
+	public async Task Restore_WhenNotDeleted_ThrowsConflict()
+	{
+		var id = Guid.NewGuid();
+		var entity = new TaskItem { Id = id, Title = "X", IsDeleted = false };
+		_repo.Setup(r => r.GetByIdAsync(id, true, default)).ReturnsAsync(entity);
+
+		var act = async () => await _sut.RestoreAsync(id);
+		(await act.Should().ThrowAsync<TaskItemConflictException>())
+			.Which.ErrorCode.Should().Be("NOT_DELETED");
+	}
+
+	// ---------- GetById: not found ----------
+
+	[Fact]
+	public async Task GetById_WhenMissing_ThrowsNotFound()
+	{
+		var id = Guid.NewGuid();
+		_repo.Setup(r => r.GetByIdAsync(id, false, default)).ReturnsAsync((TaskItem?)null);
+
+		var act = async () => await _sut.GetByIdAsync(id);
+		await act.Should().ThrowAsync<TaskItemNotFoundException>();
+	}
 }
+
