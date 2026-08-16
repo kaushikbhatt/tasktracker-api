@@ -58,8 +58,39 @@ public sealed class TaskItemService : ITaskItemService
 	// Remaining ITaskItemService members implemented in following commits:
 	// GetByIdAsync, sQueryAsync, UpdateAsync, PatchAsync, DeleteAsync,
 	// RestoreAsync, ChangeStageAsync, ReopenAsync.
-	public Task<TaskItemDto> GetByIdAsync(Guid id, CancellationToken ct = default) => throw new NotImplementedException();
-	public Task<PagedResult<TaskItemDto>> QueryAsync(TaskItemQuery query, CancellationToken ct = default) => throw new NotImplementedException();
+	public async Task<TaskItemDto> GetByIdAsync(Guid id, CancellationToken ct = default)
+	{
+		var entity = await _repository.GetByIdAsync(id, includeDeleted: false, ct)
+			?? throw new TaskItemNotFoundException(id);
+		return ToDto(entity, urgencyLevelName: null);
+	}
+
+	public async Task<PagedResult<TaskItemDto>> QueryAsync(TaskItemQuery query, CancellationToken ct = default)
+	{
+		// Validation on paging inputs -- bad input fails clearly (rule 5.5),
+		// it doesn't silently clamp to some default.
+		if (query.Page < 1)
+		{
+			throw new AppValidationException(nameof(query.Page), "Page must be 1 or greater.");
+		}
+		if (query.PageSize < 1 || query.PageSize > 200)
+		{
+			throw new AppValidationException(nameof(query.PageSize), "PageSize must be between 1 and 200.");
+		}
+
+		// Filtering, sorting, and the total-match count all happen inside
+		// the repository, against IQueryable -- never by loading all rows
+		// into memory here. See DECISIONS.md, list-endpoint performance.
+		var (items, totalCount) = await _repository.QueryAsync(query, ct);
+
+		return new PagedResult<TaskItemDto>
+		{
+			Items = items.Select(e => ToDto(e, urgencyLevelName: e.UrgencyLevel?.Name)).ToList(),
+			TotalCount = totalCount,
+			Page = query.Page,
+			PageSize = query.PageSize
+		};
+	}
 	public async Task<TaskItemDto> UpdateAsync(Guid id, UpdateTaskItemDto dto, CancellationToken ct = default)
 	{
 		var entity = await _repository.GetByIdAsync(id, includeDeleted: false, ct)
