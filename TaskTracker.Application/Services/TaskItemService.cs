@@ -64,7 +64,39 @@ public sealed class TaskItemService : ITaskItemService
 	public Task<TaskItemDto> PatchAsync(Guid id, PatchTaskItemDto dto, CancellationToken ct = default) => throw new NotImplementedException();
 	public Task DeleteAsync(Guid id, CancellationToken ct = default) => throw new NotImplementedException();
 	public Task<TaskItemDto> RestoreAsync(Guid id, CancellationToken ct = default) => throw new NotImplementedException();
-	public Task<TaskItemDto> ChangeStageAsync(Guid id, string targetStage, CancellationToken ct = default) => throw new NotImplementedException();
+	public async Task<TaskItemDto> ChangeStageAsync(Guid id, string targetStage, CancellationToken ct = default)
+	{
+		if (!Enum.TryParse<TaskStage>(targetStage, ignoreCase: true, out var target))
+		{
+			throw new AppValidationException(nameof(targetStage), $"'{targetStage}' is not a valid stage.");
+		}
+
+		var entity = await _repository.GetByIdAsync(id, includeDeleted: false, ct)
+			?? throw new TaskItemNotFoundException(id);
+
+		// Idempotency: same request arriving twice (mobile, bad connection)
+		// is a no-op on the second call, not an error.
+		if (entity.Stage == target)
+		{
+			return ToDto(entity, urgencyLevelName: null);
+		}
+
+		//forward-only under normal operation. Backward moves,
+		// including from Finished, are rejected here -- Reopen() is the
+		// only deliberate bypass, implemented separately.
+		if (!entity.Stage.IsForwardMoveTo(target))
+		{
+			throw new TaskItemConflictException(
+				"BACKWARD_STAGE_TRANSITION",
+				$"Cannot move TaskItem from '{entity.Stage}' back to '{target}'. Use the reopen action if this is intentional.");
+		}
+
+		entity.Stage = target;
+		entity.UpdatedAtUtc = DateTime.UtcNow;
+		await _repository.SaveChangesAsync(ct);
+
+		return ToDto(entity, urgencyLevelName: null);
+	}
 	public Task<TaskItemDto> ReopenAsync(Guid id, CancellationToken ct = default) => throw new NotImplementedException();
 
 	private static TaskItemDto ToDto(TaskItem entity, string? urgencyLevelName) => new()
