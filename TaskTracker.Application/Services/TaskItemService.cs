@@ -62,8 +62,52 @@ public sealed class TaskItemService : ITaskItemService
 	public Task<PagedResult<TaskItemDto>> QueryAsync(TaskItemQuery query, CancellationToken ct = default) => throw new NotImplementedException();
 	public Task<TaskItemDto> UpdateAsync(Guid id, UpdateTaskItemDto dto, CancellationToken ct = default) => throw new NotImplementedException();
 	public Task<TaskItemDto> PatchAsync(Guid id, PatchTaskItemDto dto, CancellationToken ct = default) => throw new NotImplementedException();
-	public Task DeleteAsync(Guid id, CancellationToken ct = default) => throw new NotImplementedException();
-	public Task<TaskItemDto> RestoreAsync(Guid id, CancellationToken ct = default) => throw new NotImplementedException();
+	public async Task DeleteAsync(Guid id, CancellationToken ct = default)
+	{
+		var entity = await _repository.GetByIdAsync(id, includeDeleted: false, ct)
+			?? throw new TaskItemNotFoundException(id);
+
+		// Rule 5.1: soft delete only. Support can restore within 90 days;
+		// permanent removal is a separate, unbuilt purge job (see DECISIONS.md).
+		entity.IsDeleted = true;
+		entity.DeletedAtUtc = DateTime.UtcNow;
+		entity.UpdatedAtUtc = DateTime.UtcNow;
+		await _repository.SaveChangesAsync(ct);
+	}
+
+	public async Task<TaskItemDto> RestoreAsync(Guid id, CancellationToken ct = default)
+	{
+		var entity = await _repository.GetByIdAsync(id, includeDeleted: true, ct)
+			?? throw new TaskItemNotFoundException(id);
+
+		if (!entity.IsDeleted)
+		{
+			// Restoring something that isn't deleted isn't a meaningful
+			// no-op like the idempotent stage-change case -- it's a caller
+			// mistake worth surfacing, not silently swallowing.
+			throw new TaskItemConflictException(
+				"NOT_DELETED",
+				$"TaskItem '{id}' is not deleted; nothing to restore.");
+		}
+
+		// Restoring re-activates the title -- uniqueness check
+		// applies again here. Without this, restore could silently create
+		// two active TaskItems with the same title if a new one was
+		// created using this title while the original was deleted.
+		if (await _repository.ExistsWithActiveTitleAsync(entity.Title, excludingId: entity.Id, ct))
+		{
+			throw new TaskItemConflictException(
+				"DUPLICATE_ACTIVE_TITLE",
+				$"Cannot restore: an active TaskItem with the title '{entity.Title}' already exists.");
+		}
+
+		entity.IsDeleted = false;
+		entity.DeletedAtUtc = null;
+		entity.UpdatedAtUtc = DateTime.UtcNow;
+		await _repository.SaveChangesAsync(ct);
+
+		return ToDto(entity, urgencyLevelName: null);
+	}
 	public async Task<TaskItemDto> ChangeStageAsync(Guid id, string targetStage, CancellationToken ct = default)
 	{
 		if (!Enum.TryParse<TaskStage>(targetStage, ignoreCase: true, out var target))
