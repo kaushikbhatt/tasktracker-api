@@ -31,14 +31,14 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
 			.HasForeignKey(t => t.UrgencyLevelId)
 			.OnDelete(DeleteBehavior.Restrict); // never cascade-delete task history
 
-		// Rule 5.2: unique among ACTIVE items only. Deleted rows are
+		// unique among ACTIVE items only. Deleted rows are
 		// invisible to this index, so a reused title never conflicts with
 		// its own deleted predecessor. SQLite filter syntax confirmed in
 		// the next commit (fix: correct SQLite filter syntax).
 		builder.HasIndex(t => t.Title)
-			.IsUnique()
-			.HasFilter("[IsDeleted] = 0")
-			.HasDatabaseName("UX_TaskItems_Title_Active");
+		   .IsUnique()
+		   .HasFilter("\"IsDeleted\" = 0")
+		   .HasDatabaseName("UX_TaskItems_Title_Active");
 
 		builder.HasIndex(t => t.Stage).HasDatabaseName("IX_TaskItems_Stage");
 		builder.HasIndex(t => t.UrgencyLevelId).HasDatabaseName("IX_TaskItems_UrgencyLevelId");
