@@ -33,6 +33,15 @@ builder.Services.AddSwaggerGen(c =>
 	});
 });
 
+// Dev-only CORS for React dev server
+builder.Services.AddCors(options =>
+{
+	options.AddPolicy("DevCors", policy =>
+		policy.WithOrigins("http://localhost:5173", "https://localhost:5173")
+			  .AllowAnyHeader()
+			  .AllowAnyMethod());
+});
+
 // EF Core
 builder.Services.AddDbContext<TaskTrackerDbContext>(options =>
 	options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")
@@ -76,6 +85,11 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+	// Enable CORS for React dev server only in Development
+if (app.Environment.IsDevelopment())
+{
+	app.UseCors("DevCors");
+}
 
 // Global exception handling -> consistent error responses
 app.UseMiddleware<ExceptionHandlingMiddleware>();
