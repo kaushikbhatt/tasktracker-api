@@ -280,6 +280,7 @@ public sealed class TaskItemService : ITaskItemService
 		UrgencyLevelName = urgencyLevelName ?? string.Empty,
 		Deadline = entity.Deadline,
 		CreatedAtUtc = entity.CreatedAtUtc,
-		UpdatedAtUtc = entity.UpdatedAtUtc
+		UpdatedAtUtc = entity.UpdatedAtUtc,
+		IsDeleted = entity.IsDeleted
 	};
 }
