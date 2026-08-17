@@ -11,12 +11,12 @@ A REST API for managing TaskItem records used by operations staff. Built with AS
 - Unzip the archive.
 - Place the provided SQLite file at: TaskTracker/tasktracker.db (same folder as TaskTracker.Api.csproj).Default it has been  placed already under TaskTracker/.
 - Run the API in Development:
-  - Visual Studio/VS Code: run the https profile. Your browser should auto-open at /swagger.
+  - Visual Studio/VS Code: sET STARTUP PROJECT AS TaskTracker.Api and run the https profile. Your browser should auto-open at /swagger.
   - Or browse manually to:
     - https://localhost:7148/swagger
     - or http://localhost:5038/swagger
 
-**Important: Use the provided pre-seeded database (tasktracker.db) to see realistic performance with ≥ 42,536 TaskItems immediately.**
+**Important: Use the provided pre-seeded database (tasktracker.db) to see realistic performance with ≥ 42,536 TaskItems immediately.** 
 
 ## (Re)Generating seed data
 - Use the included seeder (it auto-applies migrations):
